@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WCA Official Certificate - Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Libre+Baskerville:ital,wght@0,400&family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Montserrat', sans-serif; background: #1a1a1a; color: white; text-align: center; padding: 20px; }
+        .controls { background: white; color: #333; padding: 20px; border-radius: 12px; display: inline-block; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input, select, button { padding: 12px; margin: 5px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+        button { background: #d4af37; color: #1a1a1a; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #b8860b; transform: scale(1.05); }
+        canvas { max-width: 90vw; border: 10px solid #fff; box-shadow: 0 0 30px rgba(0,0,0,0.5); background: white; }
+    </style>
+</head>
+<body>
+
+    <h2>🏆 Official Certificate Generator</h2>
+    
+    <div class="controls">
+        <input type="text" id="compId" placeholder="Comp ID (e.g. StevenageMay2026)">
+        <input type="text" id="wcaId" placeholder="WCA ID (e.g. 2026DOE01)">
+        <select id="event">
+            <option value="333">3x3x3 Cube</option>
+            <option value="222">2x2x2 Cube</option>
+            <option value="444">4x4x4 Cube</option>
+            <option value="pyram">Pyraminx</option>
+        </select>
+        <button onclick="fetchAndGenerate()">Fetch & Generate</button>
+        <button onclick="downloadCert()" style="background:#3498db; color:white;">Download PNG</button>
+        <p id="status" style="color: #666; font-size: 12px;">Enter Comp ID and WCA ID.</p>
+    </div>
+
+    <br>
+    <canvas id="certCanvas" width="2000" height="1414"></canvas>
+
+    <script>
+        const canvas = document.getElementById('certCanvas');
+        const ctx = canvas.getContext('2d');
+
+        async function fetchAndGenerate() {
+            const compId = document.getElementById('compId').value.trim();
+            const wcaId = document.getElementById('wcaId').value.trim().toUpperCase();
+            const eventId = document.getElementById('event').value;
+            const status = document.getElementById('status');
+
+            status.innerText = "Connecting to WCA Database...";
+
+            try {
+                // We use a CORS Proxy to bypass the "security block" browser issue
+                const proxy = "https://corsproxy.io/?";
+                const target = `https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`;
+                
+                const response = await fetch(proxy + encodeURIComponent(target));
+                if (!response.ok) throw new Error("Competition not found. Check the ID.");
+                
+                const data = await response.json();
+
+                // 1. Find the person
+                const person = data.persons.find(p => p.wcaId === wcaId);
+                if (!person) throw new Error("Competitor not found in this competition.");
+
+                // 2. Find their best result in the event
+                const wcEvent = data.events.find(e => e.id === eventId);
+                let bestResult = null;
+                
+                // Search rounds from the final backwards
+                for (let i = wcEvent.rounds.length - 1; i >= 0; i--) {
+                    const roundResult = wcEvent.rounds[i].results.find(r => r.personId === person.registrantId);
+                    if (roundResult) {
+                        bestResult = roundResult;
+                        break;
+                    }
+                }
+
+                if (!bestResult) throw new Error("No results found for this event.");
+
+                // 3. Format rank and result
+                const time = bestResult.average > 0 ? (bestResult.average / 100).toFixed(2) + " Avg" : (bestResult.best / 100).toFixed(2) + " Single";
+                const rank = bestResult.ranking;
+                const suffix = ["th", "st", "nd", "rd"][(rank % 10 > 3 || [11,12,13].includes(rank % 100)) ? 0 : rank % 10];
+
+                draw(person.name, wcaId, data.name, document.getElementById('event').selectedOptions[0].text, `${rank}${suffix} Place`, time);
+                status.innerText = "Success! Certificate Generated.";
+
+            } catch (err) {
+                status.innerText = "Error: " + err.message;
+                console.error(err);
+            }
+        }
+
+        function draw(name, id, comp, event, rank, result) {
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "#d4af37";
+            ctx.lineWidth = 40; ctx.strokeRect(40, 40, canvas.width-80, canvas.height-80);
+            ctx.lineWidth = 10; ctx.strokeRect(100, 100, canvas.width-200, canvas.height-200);
+
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#1a1a1a";
+            ctx.font = "bold 50px Montserrat";
+            ctx.fillText("WORLD CUBE ASSOCIATION", canvas.width/2, 250);
+
+            ctx.font = "italic 40px 'Libre Baskerville'";
+            ctx.fillText("This official certificate is presented to", canvas.width/2, 400);
+
+            ctx.font = "bold 120px Cinzel";
+            ctx.fillStyle = "#2c3e50";
+            ctx.fillText(name.toUpperCase(), canvas.width/2, 550);
+
+            ctx.font = "bold 90px Cinzel";
+            ctx.fillStyle = "#d4af37";
+            ctx.fillText(rank.toUpperCase(), canvas.width/2, 850);
+
+            ctx.font = "55px Montserrat";
+            ctx.fillStyle = "#1a1a1a";
+            ctx.fillText(`in the ${event} event`, canvas.width/2, 950);
+            ctx.fillText(`Result: ${result}`, canvas.width/2, 1030);
+            
+            ctx.font = "bold 40px Montserrat";
+            ctx.fillText(comp, canvas.width/2, 1220);
+        }
+
+        function downloadCert() {
+            const link = document.createElement('a');
+            link.download = `Cert-${document.getElementById('wcaId').value}.png`;
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+    </script>
+</body>
+</html>
