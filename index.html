@@ -99,7 +99,15 @@
         // 2. Helper: Format WCA Times correctly
         function formatWcaTime(cs, eventId) {
             if (cs <= 0) return "DNF";
-            if (eventId === '333fm') return (cs / 100).toFixed(2) + " Moves";
+            if (eventId === '333fm') {
+                if (val < 1000) {
+                    // It's a Single (e.g., 33)
+                    return val + " Moves";
+                } else {
+                    // It's a Mean (e.g., 3333 representing 33.33)
+                    return (val / 100).toFixed(2) + " Mean";
+                }
+            }
             if (eventId === '333mbf') {
                 const missed = cs % 100;
                 const seconds = Math.floor(cs / 100) % 1e5;
