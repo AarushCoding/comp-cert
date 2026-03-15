@@ -132,8 +132,8 @@
                 const data = await response.json();
                 const event = data.events.find(e => e.id === eventId);
                 const round = event.rounds[event.rounds.length - 1];
-                const winners = round.results.filter(r => r.ranking >= 1 && r.ranking <= 3).sort((a,b) => a.ranking - b.ranking);
-
+                
+                const winners = round.results.filter(r => r.ranking >= 1 && r.ranking <= 3 && r.best > 0).sort((a,b) => a.ranking - b.ranking);
                 const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
 
                 for (let i = 0; i < winners.length; i++) {
