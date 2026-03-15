@@ -2,46 +2,48 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Official WCA Certificate Generator</title>
+    <title>WCA Official Certificate</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Great+Vibes&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Montserrat', sans-serif; background: #1a1a1a; color: white; text-align: center; padding: 20px; }
-        .ui-panel { background: white; color: #333; padding: 25px; border-radius: 15px; display: inline-block; margin-bottom: 30px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
-        input, select, button { padding: 12px; margin: 8px; border: 1.5px solid #eee; border-radius: 8px; font-size: 14px; }
-        button { background: #d4af37; color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.3s; }
-        button:hover { background: #b8860b; transform: scale(1.02); }
-        canvas { max-width: 90vw; border: 1px solid #000; background: white; }
+        .ui-panel { background: white; color: #333; padding: 20px; border-radius: 12px; display: inline-block; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input, select, button { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+        .toggle-group { margin: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; }
+        button { background: #d4af37; color: white; border: none; font-weight: bold; cursor: pointer; padding: 10px 20px; }
+        button:hover { background: #b8860b; }
+        canvas { max-width: 95vw; height: auto; border: 1px solid #000; background: white; margin-top: 10px; }
     </style>
 </head>
 <body>
 
     <div class="ui-panel">
-        <h2 style="margin-top:0">🏆 WCA Certificate Pro</h2>
         <input type="text" id="compId" placeholder="Comp ID (e.g. StevenageMay2026)">
-        <input type="text" id="wcaId" placeholder="WCA ID (e.g. 2026DOE01)">
+        <input type="text" id="wcaId" placeholder="WCA ID">
         <select id="event">
             <option value="333">3x3x3 Cube</option>
             <option value="222">2x2x2 Cube</option>
             <option value="444">4x4x4 Cube</option>
             <option value="pyram">Pyraminx</option>
+            <option value="clock">Clock</option>
         </select>
-        <br>
-        <button onclick="fetchAndGenerate()">Generate Official Cert</button>
-        <button onclick="downloadCert()" style="background:#2980b9;">Download High-Res PNG</button>
-        <p id="status" style="font-size: 11px; color: #999;">Must be run from a local server (e.g. VS Code Live Server)</p>
+        <div class="toggle-group">
+            <input type="checkbox" id="showSign" checked> <span>Include Signature Line</span>
+        </div>
+        <button onclick="fetchAndGenerate()">Generate Certificate</button>
+        <button onclick="downloadCert()" style="background:#2980b9;">Download PNG</button>
+        <p id="status" style="font-size: 11px; color: #888; margin: 5px 0 0 0;">Run via Local Server/VS Code Live Server</p>
     </div>
 
     <br>
-    <canvas id="certCanvas" width="2480" height="3508"></canvas>
+    <canvas id="certCanvas" width="3508" height="2480"></canvas>
 
     <script>
         const canvas = document.getElementById('certCanvas');
         const ctx = canvas.getContext('2d');
         
-        // 1. Pre-load the logo from GitHub
+        // Using local logo.png from your repository
         const logo = new Image();
-        logo.crossOrigin = "anonymous"; 
-        logo.src = "https://raw.githubusercontent.com/thewca/worldcubeassociation.org/master/app/assets/images/WCAlogo_notext.png";
+        logo.src = "logo.png"; 
 
         async function fetchAndGenerate() {
             const status = document.getElementById('status');
@@ -49,22 +51,16 @@
             const wcaId = document.getElementById('wcaId').value.trim().toUpperCase();
             const eventId = document.getElementById('event').value;
 
-            if (!logo.complete) {
-                status.innerText = "Error: Logo still loading. Wait a second and try again.";
-                return;
-            }
-
-            status.innerText = "Fetching results...";
+            status.innerText = "Accessing WCA Database...";
 
             try {
-                // Fetching from official WCA API
                 const url = `https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`;
                 const response = await fetch(url);
                 if (!response.ok) throw new Error("Competition not found.");
                 
                 const data = await response.json();
                 const person = data.persons.find(p => p.wcaId === wcaId);
-                if (!person) throw new Error("Competitor not found in this competition.");
+                if (!person) throw new Error("Competitor not found in this comp.");
 
                 const wcEvent = data.events.find(e => e.id === eventId);
                 let bestRes = null;
@@ -77,77 +73,88 @@
 
                 const resStr = bestRes.average > 0 ? (bestRes.average / 100).toFixed(2) + " Average" : (bestRes.best / 100).toFixed(2) + " Single";
                 const rank = bestRes.ranking;
-                const suffix = ["th", "st", "nd", "rd"][(rank % 10 > 3 || [11,12,13].includes(rank % 100)) ? 0 : rank % 10];
+                const suffixes = ["th", "st", "nd", "rd"];
+                const suffix = (rank % 10 > 3 || [11, 12, 13].includes(rank % 100)) ? "th" : suffixes[rank % 10];
 
                 render(person.name, wcaId, data.name, document.getElementById('event').selectedOptions[0].text, `${rank}${suffix} Place`, resStr);
-                status.innerText = "Success! Official Certificate Generated.";
+                status.innerText = "Success!";
             } catch (err) {
                 status.innerText = "Error: " + err.message;
             }
         }
 
         function render(name, id, comp, event, rank, result) {
-            // Paper Background
-            ctx.fillStyle = "#fffcf5";
+            const showSign = document.getElementById('showSign').checked;
+
+            // 1. Background
+            ctx.fillStyle = "#fffcf5"; 
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Double Frame
+            // 2. Borders
             ctx.strokeStyle = "#1a1a1a";
-            ctx.lineWidth = 15;
+            ctx.lineWidth = 25;
             ctx.strokeRect(60, 60, canvas.width - 120, canvas.height - 120);
             ctx.strokeStyle = "#d4af37";
-            ctx.lineWidth = 8;
-            ctx.strokeRect(100, 100, canvas.width - 200, canvas.height - 200);
+            ctx.lineWidth = 10;
+            ctx.strokeRect(110, 110, canvas.width - 220, canvas.height - 220);
 
-            // DRAW LOGO (Now safe because of .complete check)
-            const logoW = 400;
-            const logoH = (logo.height / logo.width) * logoW;
-            ctx.drawImage(logo, canvas.width/2 - logoW/2, 280, logoW, logoH);
+            // 3. Logo (wait for load check)
+            if (logo.complete && logo.naturalHeight !== 0) {
+                const logoSize = 350;
+                ctx.drawImage(logo, 200, 200, logoSize, logoSize);
+            }
 
-            // Header
+            // 4. Header
             ctx.textAlign = "center";
             ctx.fillStyle = "#1a1a1a";
-            ctx.font = "bold 65px Montserrat";
-            ctx.fillText("WORLD CUBE ASSOCIATION", canvas.width/2, 820);
+            ctx.font = "bold 60px Montserrat";
+            ctx.fillText("WORLD CUBE ASSOCIATION", canvas.width / 2, 350);
+            ctx.font = "italic 50px 'Playfair Display'";
+            ctx.fillText("Official Certificate of Achievement", canvas.width / 2, 450);
 
-            ctx.font = "italic 55px 'Playfair Display'";
-            ctx.fillText("Official Certificate of Achievement", canvas.width/2, 920);
-
-            // Name
+            // 5. Name - DYNAMIC SCALING
             ctx.fillStyle = "#d4af37";
-            ctx.font = "bold 180px 'Cinzel Decorative'";
-            ctx.fillText(name.toUpperCase(), canvas.width/2, 1250);
+            let fontSize = 200;
+            ctx.font = `bold ${fontSize}px 'Cinzel Decorative'`;
+            // If name is wider than 70% of canvas, shrink font
+            while (ctx.measureText(name.toUpperCase()).width > canvas.width * 0.75) {
+                fontSize -= 5;
+                ctx.font = `bold ${fontSize}px 'Cinzel Decorative'`;
+            }
+            ctx.fillText(name.toUpperCase(), canvas.width / 2, 900);
 
-            ctx.fillStyle = "#7f8c8d";
-            ctx.font = "bold 55px Montserrat";
-            ctx.fillText("WCA ID: " + id, canvas.width/2, 1340);
-
-            // Achievement
+            // 6. Details
             ctx.fillStyle = "#1a1a1a";
-            ctx.font = "italic 60px 'Playfair Display'";
-            ctx.fillText("has officially secured", canvas.width/2, 1600);
+            ctx.font = "50px Montserrat";
+            ctx.fillText("WCA ID: " + id, canvas.width / 2, 1000);
 
-            ctx.font = "bold 150px 'Playfair Display'";
-            ctx.fillText(rank.toUpperCase(), canvas.width/2, 1800);
+            ctx.font = "italic 60px 'Playfair Display'";
+            ctx.fillText("for securing", canvas.width / 2, 1250);
+
+            ctx.font = "bold 160px 'Playfair Display'";
+            ctx.fillText(rank.toUpperCase(), canvas.width / 2, 1450);
 
             ctx.font = "70px Montserrat";
-            ctx.fillText(`in ${event}`, canvas.width/2, 1950);
+            ctx.fillText(`in ${event}`, canvas.width / 2, 1600);
 
-            ctx.font = "italic 90px 'Great Vibes'";
-            ctx.fillText(`with a result of ${result}`, canvas.width/2, 2150);
+            ctx.font = "italic 100px 'Great Vibes'";
+            ctx.fillText(`Result: ${result}`, canvas.width / 2, 1850);
 
-            // Competition Info
-            ctx.font = "bold 60px Montserrat";
-            ctx.fillText(comp.toUpperCase(), canvas.width/2, 2900);
-            
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.moveTo(canvas.width/2 - 500, 2950);
-            ctx.lineTo(canvas.width/2 + 500, 2950);
-            ctx.stroke();
+            // 7. Footer & Comp Name
+            ctx.font = "bold 55px Montserrat";
+            ctx.fillText(comp.toUpperCase(), canvas.width / 2, 2200);
 
-            ctx.font = "40px Montserrat";
-            ctx.fillText("OFFICIAL WCA COMPETITION", canvas.width/2, 3020);
+            // 8. Signature Line (Conditional)
+            if (showSign) {
+                ctx.strokeStyle = "#1a1a1a";
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(canvas.width - 800, 2200);
+                ctx.lineTo(canvas.width - 200, 2200);
+                ctx.stroke();
+                ctx.font = "35px Montserrat";
+                ctx.fillText("WCA DELEGATE SIGNATURE", canvas.width - 500, 2260);
+            }
         }
 
         function downloadCert() {
@@ -156,6 +163,9 @@
             link.href = canvas.toDataURL('image/png', 1.0);
             link.click();
         }
+
+        // Initial empty render so the user sees something
+        window.onload = () => render("COMPETITOR NAME", "WCA ID", "COMPETITION NAME", "EVENT", "RANK", "RESULT");
     </script>
 </body>
 </html>
