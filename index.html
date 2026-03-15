@@ -43,28 +43,27 @@
             const wcaId = document.getElementById('wcaId').value.trim().toUpperCase();
             const eventId = document.getElementById('event').value;
             const status = document.getElementById('status');
-
-            status.innerText = "Connecting to WCA Database...";
-
+        
+            status.innerText = "Connecting to WCA...";
+        
             try {
-                // We use a CORS Proxy to bypass the "security block" browser issue
-                const proxy = "https://corsproxy.io/?";
-                const target = `https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`;
+                // This URL gives a clean JSON file without the "No query document" error
+                const url = `https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`;
                 
-                const response = await fetch(proxy + encodeURIComponent(target));
-                if (!response.ok) throw new Error("Competition not found. Check the ID.");
+                const response = await fetch(url);
+                if (!response.ok) throw new Error("Comp not found. Check the ID (e.g. StevenageMay2026)");
                 
                 const data = await response.json();
-
+        
                 // 1. Find the person
                 const person = data.persons.find(p => p.wcaId === wcaId);
-                if (!person) throw new Error("Competitor not found in this competition.");
-
-                // 2. Find their best result in the event
+                if (!person) throw new Error("WCA ID not found in this competition.");
+        
+                // 2. Find the event and the person's best result
                 const wcEvent = data.events.find(e => e.id === eventId);
                 let bestResult = null;
                 
-                // Search rounds from the final backwards
+                // Search rounds from final backwards to get their ultimate standing
                 for (let i = wcEvent.rounds.length - 1; i >= 0; i--) {
                     const roundResult = wcEvent.rounds[i].results.find(r => r.personId === person.registrantId);
                     if (roundResult) {
@@ -72,20 +71,21 @@
                         break;
                     }
                 }
-
+        
                 if (!bestResult) throw new Error("No results found for this event.");
-
-                // 3. Format rank and result
+        
+                // 3. Format result (WCA stores as centiseconds)
                 const time = bestResult.average > 0 ? (bestResult.average / 100).toFixed(2) + " Avg" : (bestResult.best / 100).toFixed(2) + " Single";
                 const rank = bestResult.ranking;
                 const suffix = ["th", "st", "nd", "rd"][(rank % 10 > 3 || [11,12,13].includes(rank % 100)) ? 0 : rank % 10];
-
+        
+                // 4. Send to the draw function
                 draw(person.name, wcaId, data.name, document.getElementById('event').selectedOptions[0].text, `${rank}${suffix} Place`, time);
-                status.innerText = "Success! Certificate Generated.";
-
+                status.innerText = "Success!";
+        
             } catch (err) {
                 status.innerText = "Error: " + err.message;
-                console.error(err);
+                console.error("Fetch Error:", err);
             }
         }
 
