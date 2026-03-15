@@ -2,24 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>WCA Podium Certificate Generator</title>
+    <title>WCA Official Certificate Generator</title>
     <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Playfair+Display:wght@700&family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
         body { font-family: 'Montserrat', sans-serif; background: #1a1a1a; color: white; text-align: center; padding: 20px; }
-        .ui-panel { background: white; color: #333; padding: 20px; border-radius: 12px; display: inline-block; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        input, select, button { padding: 10px; margin: 5px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
-        .toggle-group { margin: 10px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; }
-        button { background: #d4af37; color: white; border: none; font-weight: bold; cursor: pointer; padding: 10px 20px; }
-        button:hover { background: #b8860b; }
-        canvas { max-width: 80vw; height: auto; border: 1px solid #ccc; background: white; margin-top: 10px; }
+        .ui-panel { background: white; color: #333; padding: 25px; border-radius: 15px; display: inline-block; margin-bottom: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        input, select, button { padding: 12px; margin: 5px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; outline: none; }
+        .toggle-group { margin: 15px; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: bold; }
+        button { background: #d4af37; color: white; border: none; font-weight: bold; cursor: pointer; padding: 12px 25px; transition: 0.2s; }
+        button:hover { background: #b8860b; transform: translateY(-1px); }
+        .status-msg { font-size: 12px; color: #888; margin-top: 10px; }
+        
+        /* Preview styling */
+        canvas#previewCanvas { 
+            max-width: 90vw; 
+            height: auto; 
+            border: 1px solid #ccc; 
+            background: white; 
+            margin-top: 20px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        }
     </style>
 </head>
 <body>
 
     <div class="ui-panel">
-        <input type="text" id="compId" placeholder="Comp ID (e.g. StevenageMay2026)">
+        <h2 style="margin-top:0; color:#1a1a1a">🏆 WCA Certificate Engine</h2>
+        
+        <input type="text" id="compId" placeholder="Competition ID (e.g. StevenageMay2026)">
+        <input type="text" id="wcaId" placeholder="WCA ID (Optional for Individual)">
+        
         <select id="event">
             <optgroup label="Cubes">
                 <option value="333">3x3x3 Cube</option>
@@ -45,124 +59,181 @@
                 <option value="333fm">3x3x3 Fewest Moves</option>
             </optgroup>
         </select>
+
         <div class="toggle-group">
-            <input type="checkbox" id="showSign" checked> <span>Include Signature Line</span>
+            <input type="checkbox" id="showSign" checked> <span>Include Delegate Signature Line</span>
         </div>
-        <button onclick="downloadPodiumPDF()" style="background:#e67e22;">Download Podium PDFs (Top 3)</button>
-        <p id="status" style="font-size: 11px; color: #888; margin: 5px 0 0 0;">Enter Comp ID and select event to generate podium.</p>
+
+        <button onclick="fetchIndividual()">Individual Cert</button>
+        <button onclick="fetchPodium()" style="background:#e67e22;">Download Podium (Top 3)</button>
+        
+        <p id="status" class="status-msg">Ensure <b>logo.png</b> is in the same folder as this file.</p>
     </div>
 
     <br>
     <canvas id="certCanvas" width="3508" height="2480" style="display:none;"></canvas>
-    <h3>Last Generated Preview:</h3>
-    <canvas id="previewCanvas" width="3508" height="2480" style="display:inline-block; max-width: 400px;"></canvas>
+    <canvas id="previewCanvas" width="3508" height="2480"></canvas>
 
     <script>
         const canvas = document.getElementById('certCanvas');
         const preview = document.getElementById('previewCanvas');
         const ctx = canvas.getContext('2d');
         const pCtx = preview.getContext('2d');
-        const logo = new Image();
-        logo.src = "logo.png"; 
+        const status = document.getElementById('status');
 
-        async function downloadPodiumPDF() {
+        const logo = new Image();
+        logo.src = "logo.png"; // Must be in the same folder
+
+        // Helper: Time Formatter (M:SS.hh)
+        function formatWcaTime(cs, eventId) {
+            if (cs <= 0) return "DNF";
+            if (eventId === '333fm') return (cs / 100).toFixed(2) + " Moves";
+            if (eventId === '333mbf') {
+                const missed = cs % 100;
+                const seconds = Math.floor(cs / 100) % 1e5;
+                const solved = 99 - Math.floor(cs / 1e7);
+                const attempted = solved + missed;
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${solved}/${attempted} in ${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+            const totalSecs = cs / 100;
+            if (totalSecs < 60) return totalSecs.toFixed(2);
+            const mins = Math.floor(totalSecs / 60);
+            const secs = (totalSecs % 60).toFixed(2);
+            return `${mins}:${secs.padStart(5, '0')}`;
+        }
+
+        async function getWcaData(compId) {
+            const url = `https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Comp not found. Check ID.");
+            return await response.json();
+        }
+
+        // --- SINGLE CERT LOGIC ---
+        async function fetchIndividual() {
+            const compId = document.getElementById('compId').value.trim();
+            const wcaId = document.getElementById('wcaId').value.trim().toUpperCase();
+            const eventId = document.getElementById('event').value;
+            if(!compId || !wcaId) { alert("Need Comp ID and WCA ID"); return; }
+            
+            status.innerText = "Loading data...";
+            try {
+                const data = await getWcaData(compId);
+                const person = data.persons.find(p => p.wcaId === wcaId);
+                if (!person) throw new Error("Competitor not in this competition.");
+                
+                const event = data.events.find(e => e.id === eventId);
+                let result = null;
+                for (let i = event.rounds.length - 1; i >= 0; i--) {
+                    const r = event.rounds[i].results.find(res => res.personId === person.registrantId);
+                    if (r) { result = r; break; }
+                }
+                if (!result) throw new Error("No result for this event.");
+
+                const timeStr = formatWcaTime(result.average > 0 ? result.average : result.best, eventId);
+                const label = result.average > 0 ? "AVERAGE" : "SINGLE";
+                const rankSuffix = ["th", "st", "nd", "rd"][(result.ranking % 10 > 3 || [11,12,13].includes(result.ranking % 100)) ? 0 : result.ranking % 10];
+
+                render(person.name, wcaId, data.name, document.getElementById('event').selectedOptions[0].text, `${result.ranking}${rankSuffix} Place`, `${timeStr} ${label}`);
+                status.innerText = "Individual Certificate Generated.";
+                updatePreview();
+            } catch (err) { status.innerText = "Error: " + err.message; }
+        }
+
+        // --- PODIUM LOGIC (3 Pages) ---
+        async function fetchPodium() {
             const { jsPDF } = window.jspdf;
-            const status = document.getElementById('status');
             const compId = document.getElementById('compId').value.trim();
             const eventId = document.getElementById('event').value;
+            if(!compId) { alert("Enter Competition ID"); return; }
 
-            if (!compId) { alert("Please enter a Competition ID"); return; }
-            status.innerText = "Fetching podium data...";
-
+            status.innerText = "Fetching podium...";
             try {
-                const url = `https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error("Competition not found.");
-                
-                const data = await response.json();
-                const wcEvent = data.events.find(e => e.id === eventId);
-                const finalRound = wcEvent.rounds[wcEvent.rounds.length - 1];
-                
-                // Get top 3
-                const winners = finalRound.results.filter(r => r.ranking >= 1 && r.ranking <= 3)
-                                  .sort((a, b) => a.ranking - b.ranking);
+                const data = await getWcaData(compId);
+                const event = data.events.find(e => e.id === eventId);
+                const finalRound = event.rounds[event.rounds.length - 1];
+                const winners = finalRound.results.filter(r => r.ranking >= 1 && r.ranking <= 3).sort((a,b) => a.ranking - b.ranking);
 
-                if (winners.length === 0) throw new Error("No results found for this event yet.");
+                if (winners.length === 0) throw new Error("No results recorded yet.");
 
-                const pdf = new jsPDF({
-                    orientation: 'landscape',
-                    unit: 'px',
-                    format: [canvas.width, canvas.height]
-                });
+                const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
 
                 for (let i = 0; i < winners.length; i++) {
-                    const result = winners[i];
-                    const person = data.persons.find(p => p.registrantId === result.personId);
-                    
-                    const resStr = result.average > 0 ? (result.average / 100).toFixed(2) + " Average" : (result.best / 100).toFixed(2) + " Single";
-                    const rankSuffix = ["th", "st", "nd", "rd"][result.ranking] || "th";
+                    const res = winners[i];
+                    const person = data.persons.find(p => p.registrantId === res.personId);
+                    const timeStr = formatWcaTime(res.average > 0 ? res.average : res.best, eventId);
+                    const label = res.average > 0 ? "AVERAGE" : "SINGLE";
+                    const suffix = ["th", "st", "nd", "rd"][res.ranking] || "th";
 
-                    // Render to hidden canvas
-                    render(person.name, person.wcaId || "NEW", data.name, document.getElementById('event').selectedOptions[0].text, `${result.ranking}${rankSuffix} Place`, resStr);
+                    render(person.name, person.wcaId || "NEW", data.name, document.getElementById('event').selectedOptions[0].text, `${res.ranking}${suffix} Place`, `${timeStr} ${label}`);
                     
-                    // Add to PDF
-                    const imgData = canvas.toDataURL('image/jpeg', 0.9);
                     if (i > 0) pdf.addPage([canvas.width, canvas.height], 'landscape');
-                    pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
-                    
-                    // Update preview display
-                    pCtx.drawImage(canvas, 0, 0, preview.width, preview.height);
+                    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width, canvas.height);
+                    updatePreview();
                 }
 
                 pdf.save(`${compId}_${eventId}_Podium.pdf`);
-                status.innerText = "Podium PDF Downloaded!";
-            } catch (err) {
-                status.innerText = "Error: " + err.message;
-            }
+                status.innerText = "Podium PDF Saved!";
+            } catch (err) { status.innerText = "Error: " + err.message; }
         }
 
         function render(name, id, comp, event, rank, result) {
             const showSign = document.getElementById('showSign').checked;
-            ctx.fillStyle = "#ffffff"; 
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = "#1a1a1a";
-            ctx.lineWidth = 30; ctx.strokeRect(60, 60, canvas.width - 120, canvas.height - 120);
-            ctx.strokeStyle = "#d4af37";
-            ctx.lineWidth = 12; ctx.strokeRect(115, 115, canvas.width - 230, canvas.height - 230);
 
+            // 1. Clean White Background
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Borders
+            ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 30;
+            ctx.strokeRect(60, 60, canvas.width - 120, canvas.height - 120);
+            ctx.strokeStyle = "#d4af37"; ctx.lineWidth = 12;
+            ctx.strokeRect(115, 115, canvas.width - 230, canvas.height - 230);
+
+            // 3. Logo
             if (logo.complete && logo.naturalHeight !== 0) {
                 ctx.drawImage(logo, 200, 200, 350, 350);
             }
 
-            ctx.textAlign = "center";
-            ctx.fillStyle = "#1a1a1a";
+            // 4. Header
+            ctx.textAlign = "center"; ctx.fillStyle = "#1a1a1a";
             ctx.font = "bold 70px Montserrat";
             ctx.fillText("WORLD CUBE ASSOCIATION", canvas.width / 2, 380);
-            ctx.font = "600 50px Montserrat"; ctx.fillStyle = "#555";
+            ctx.font = "bold 50px Montserrat"; ctx.fillStyle = "#555";
             ctx.fillText("OFFICIAL CERTIFICATE OF ACHIEVEMENT", canvas.width / 2, 480);
 
+            // 5. Name - Dynamic Scaling for long names
             ctx.fillStyle = "#d4af37";
-            let fontSize = 220;
-            ctx.font = `bold ${fontSize}px 'Cinzel Decorative'`;
+            let fSize = 220;
+            ctx.font = `bold ${fSize}px 'Cinzel Decorative'`;
             while (ctx.measureText(name.toUpperCase()).width > canvas.width * 0.8) {
-                fontSize -= 5;
-                ctx.font = `bold ${fontSize}px 'Cinzel Decorative'`;
+                fSize -= 5;
+                ctx.font = `bold ${fSize}px 'Cinzel Decorative'`;
             }
             ctx.fillText(name.toUpperCase(), canvas.width / 2, 950);
 
+            // 6. Data
             ctx.fillStyle = "#1a1a1a";
             ctx.font = "bold 55px Montserrat";
             ctx.fillText("WCA ID: " + id, canvas.width / 2, 1070);
+            
             ctx.font = "600 65px Montserrat"; ctx.fillStyle = "#777";
-            ctx.fillText("has officially achieved", canvas.width / 2, 1300);
+            ctx.fillText("has officially secured", canvas.width / 2, 1300);
+
             ctx.font = "bold 180px 'Playfair Display'"; ctx.fillStyle = "#1a1a1a";
             ctx.fillText(rank.toUpperCase(), canvas.width / 2, 1520);
-            ctx.font = "bold 80px Montserrat";
-            ctx.fillText(`in ${event}`, canvas.width / 2, 1680);
+
+            ctx.font = "bold 85px Montserrat";
+            ctx.fillText(`in the ${event} event`, canvas.width / 2, 1680);
+
             ctx.font = "700 110px Montserrat"; ctx.fillStyle = "#d4af37";
-            ctx.fillText(`RESULT: ${result}`, canvas.width / 2, 1900);
+            ctx.fillText(`RESULT: ${result}`, canvas.width / 2, 1920);
+
+            // 7. Footer
             ctx.fillStyle = "#1a1a1a";
-            ctx.font = "bold 60px Montserrat";
+            ctx.font = "bold 65px Montserrat";
             ctx.fillText(comp.toUpperCase(), canvas.width / 2, 2220);
 
             if (showSign) {
@@ -172,6 +243,15 @@
                 ctx.fillText("OFFICIAL DELEGATE SIGNATURE", canvas.width - 550, 2280);
             }
         }
+
+        function updatePreview() {
+            pCtx.drawImage(canvas, 0, 0, preview.width, preview.height);
+        }
+
+        window.onload = () => {
+            render("Competitor Name", "2026ID01", "Competition Name", "3x3x3 Cube", "1st Place", "8.50 Average");
+            updatePreview();
+        };
     </script>
 </body>
 </html>
