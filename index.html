@@ -83,13 +83,20 @@
         const ctx = canvas.getContext('2d');
         const pCtx = preview.getContext('2d');
         const status = document.getElementById('status');
-
         const logo = new Image();
-        logo.src = "logo.png";
-
+        logo.src = "logo.png"; 
+        
         const blindEvents = ['333bf', '444bf', '555bf', '333mbf', '333fm'];
-
-        // Helper: Time Formatter
+        
+        // 1. Helper: Determine Color based on Rank
+        function getRankColor(rank) {
+            if (rank === 1) return "#D4AF37"; // Gold
+            if (rank === 2) return "#C0C0C0"; // Silver
+            if (rank === 3) return "#CD7F32"; // Bronze
+            return "#1A1A1A"; // Black for 4th+ or non-podium
+        }
+        
+        // 2. Helper: Format WCA Times correctly
         function formatWcaTime(cs, eventId) {
             if (cs <= 0) return "DNF";
             if (eventId === '333fm') return (cs / 100).toFixed(2) + " Moves";
@@ -107,14 +114,64 @@
             const secs = (totalSecs % 60).toFixed(2);
             return `${mins}:${secs.padStart(5, '0')}`;
         }
-
+        
+        // 3. Render Engine: Pure White Background, Dynamic Colors
+        function render(name, id, comp, event, rank, result, rankColor) {
+            // Background
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Double Borders (Outer Black, Inner Rank-Color)
+            ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 30; ctx.strokeRect(60, 60, canvas.width - 120, canvas.height - 120);
+            ctx.strokeStyle = rankColor; ctx.lineWidth = 12; ctx.strokeRect(115, 115, canvas.width - 230, canvas.height - 230);
+        
+            if (logo.complete && logo.naturalHeight !== 0) {
+                ctx.drawImage(logo, 200, 200, 350, 350);
+            }
+        
+            ctx.textAlign = "center"; ctx.fillStyle = "#1a1a1a";
+            ctx.font = "bold 70px Montserrat"; ctx.fillText("WORLD CUBE ASSOCIATION", canvas.width / 2, 380);
+            ctx.font = "bold 50px Montserrat"; ctx.fillStyle = "#555"; ctx.fillText("OFFICIAL CERTIFICATE OF ACHIEVEMENT", canvas.width / 2, 480);
+        
+            // Name Scaling & Cursive-style Font
+            ctx.fillStyle = rankColor;
+            let fSize = 220; ctx.font = `bold ${fSize}px 'Cinzel Decorative'`;
+            while (ctx.measureText(name.toUpperCase()).width > canvas.width * 0.8) {
+                fSize -= 5; ctx.font = `bold ${fSize}px 'Cinzel Decorative'`;
+            }
+            ctx.fillText(name.toUpperCase(), canvas.width / 2, 950);
+        
+            // Details
+            ctx.fillStyle = "#1a1a1a"; ctx.font = "bold 55px Montserrat"; ctx.fillText("WCA ID: " + id, canvas.width / 2, 1070);
+            ctx.font = "600 65px Montserrat"; ctx.fillStyle = "#777"; ctx.fillText("has officially secured", canvas.width / 2, 1300);
+            ctx.font = "bold 180px 'Playfair Display'"; ctx.fillStyle = "#1a1a1a"; ctx.fillText(rank.toUpperCase(), canvas.width / 2, 1520);
+            ctx.font = "bold 85px Montserrat"; ctx.fillText(`in the ${event} event`, canvas.width / 2, 1680);
+            
+            // Result line in Rank Color
+            ctx.font = "700 110px Montserrat"; ctx.fillStyle = rankColor; ctx.fillText(`RESULT: ${result}`, canvas.width / 2, 1920);
+        
+            // Competition Footer
+            ctx.fillStyle = "#1a1a1a"; ctx.font = "bold 65px Montserrat"; ctx.fillText(comp.toUpperCase(), canvas.width / 2, 2220);
+        
+            // Signature Logic
+            if (document.getElementById('showSign').checked) {
+                ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.moveTo(canvas.width - 850, 2220); ctx.lineTo(canvas.width - 250, 2220); ctx.stroke();
+                ctx.font = "bold 35px Montserrat"; ctx.fillText("OFFICIAL DELEGATE SIGNATURE", canvas.width - 550, 2280);
+            }
+            updatePreview();
+        }
+        
+        function updatePreview() { pCtx.drawImage(canvas, 0, 0, preview.width, preview.height); }
+        
+        // 4. Individual Certificate Fetch
         async function fetchIndividual() {
             const compId = document.getElementById('compId').value.trim();
             const wcaId = document.getElementById('wcaId').value.trim().toUpperCase();
             const eventId = document.getElementById('event').value;
             if(!compId || !wcaId) return alert("Need Comp ID and WCA ID");
-
-            status.innerText = "Loading data...";
+        
+            status.innerText = "Searching WCA database...";
             try {
                 const response = await fetch(`https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`);
                 const data = await response.json();
@@ -127,110 +184,68 @@
                 }
                 
                 if (!result || result.best <= 0) throw new Error("No successful result found.");
-
+        
                 const isBlind = blindEvents.includes(eventId);
                 const val = (isBlind || result.average <= 0) ? result.best : result.average;
                 const label = (isBlind || result.average <= 0) ? "SINGLE" : "AVERAGE";
                 const suffix = ["th", "st", "nd", "rd"][(result.ranking % 10 > 3 || [11,12,13].includes(result.ranking % 100)) ? 0 : result.ranking % 10];
-
-                render(person.name, wcaId, data.name, document.getElementById('event').selectedOptions[0].text, `${result.ranking}${suffix} Place`, `${formatWcaTime(val, eventId)} ${label}`);
-                updatePreview();
-                status.innerText = "Certificate Generated.";
+                
+                // Dynamic Color for Individual
+                const rankColor = getRankColor(result.ranking);
+        
+                render(person.name, wcaId, data.name, document.getElementById('event').selectedOptions[0].text, `${result.ranking}${suffix} Place`, `${formatWcaTime(val, eventId)} ${label}`, rankColor);
+                status.innerText = "Individual Certificate Ready.";
             } catch (err) { status.innerText = "Error: " + err.message; }
         }
-
+        
+        // 5. Podium & Batch Logic
         async function downloadPodiumPDF(isBatch) {
             const { jsPDF } = window.jspdf;
             const compId = document.getElementById('compId').value.trim();
             if(!compId) return alert("Enter Competition ID");
-
-            status.innerText = "Fetching podium data...";
+        
+            status.innerText = "Preparing PDF generation...";
             try {
                 const response = await fetch(`https://www.worldcubeassociation.org/api/v0/competitions/${compId}/wcif/public`);
-                if (!response.ok) throw new Error("Competition not found.");
                 const data = await response.json();
-                
-                // Decide which events to run
                 const eventsToProcess = isBatch ? data.events : [data.events.find(e => e.id === document.getElementById('event').value)];
-                
                 const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width, canvas.height] });
                 let pageCount = 0;
-
+        
                 for (const event of eventsToProcess) {
                     const round = event.rounds[event.rounds.length - 1];
-                    // Filter: Rank 1-3 AND must have a success (best > 0)
+                    // Filter: Ranks 1-3 AND must be a success (best > 0)
                     const winners = round.results.filter(r => r.ranking >= 1 && r.ranking <= 3 && r.best > 0).sort((a,b) => a.ranking - b.ranking);
-
+        
                     for (const res of winners) {
                         const person = data.persons.find(p => p.registrantId === res.personId);
                         const isBlind = blindEvents.includes(event.id);
                         const val = (isBlind || res.average <= 0) ? res.best : res.average;
                         const label = (isBlind || res.average <= 0) ? "SINGLE" : "AVERAGE";
                         const suffix = ["th", "st", "nd", "rd"][res.ranking] || "th";
-                        
-                        // Get nice name from the dropdown if possible, otherwise use ID
                         const eventLabel = document.querySelector(`#event option[value="${event.id}"]`)?.text || event.id;
-
-                        render(person.name, person.wcaId || "NEW", data.name, eventLabel, `${res.ranking}${suffix} Place`, `${formatWcaTime(val, event.id)} ${label}`);
+                        
+                        // Color Logic for Podiums
+                        const rankColor = getRankColor(res.ranking);
+        
+                        render(person.name, person.wcaId || "NEW", data.name, eventLabel, `${res.ranking}${suffix} Place`, `${formatWcaTime(val, event.id)} ${label}`, rankColor);
                         
                         if (pageCount > 0) pdf.addPage([canvas.width, canvas.height], 'landscape');
                         pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, canvas.width, canvas.height);
                         pageCount++;
                     }
                 }
-
-                if (pageCount === 0) throw new Error("No podium results found to generate.");
-                
-                pdf.save(`${compId}_${isBatch ? 'Full_Podium' : document.getElementById('event').value}.pdf`);
-                status.innerText = `Generated ${pageCount} certificate(s).`;
-                updatePreview();
+        
+                if (pageCount === 0) throw new Error("No successful podiums found.");
+                pdf.save(`${compId}_${isBatch ? 'Full_Podiums' : 'Event_Podium'}.pdf`);
+                status.innerText = `Finished! Generated ${pageCount} pages.`;
             } catch (err) { status.innerText = "Error: " + err.message; }
         }
-
-        function render(name, id, comp, event, rank, result) {
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 30; ctx.strokeRect(60, 60, canvas.width - 120, canvas.height - 120);
-            ctx.strokeStyle = "#d4af37"; ctx.lineWidth = 12; ctx.strokeRect(115, 115, canvas.width - 230, canvas.height - 230);
-
-            if (logo.complete && logo.naturalHeight !== 0) {
-                ctx.drawImage(logo, 200, 200, 350, 350);
-            }
-
-            ctx.textAlign = "center"; ctx.fillStyle = "#1a1a1a";
-            ctx.font = "bold 70px Montserrat"; ctx.fillText("WORLD CUBE ASSOCIATION", canvas.width / 2, 380);
-            ctx.font = "bold 50px Montserrat"; ctx.fillStyle = "#555"; ctx.fillText("OFFICIAL CERTIFICATE OF ACHIEVEMENT", canvas.width / 2, 480);
-
-            ctx.fillStyle = "#d4af37";
-            let fSize = 220; ctx.font = `bold ${fSize}px 'Cinzel Decorative'`;
-            while (ctx.measureText(name.toUpperCase()).width > canvas.width * 0.8) {
-                fSize -= 5; ctx.font = `bold ${fSize}px 'Cinzel Decorative'`;
-            }
-            ctx.fillText(name.toUpperCase(), canvas.width / 2, 950);
-
-            ctx.fillStyle = "#1a1a1a"; ctx.font = "bold 55px Montserrat"; ctx.fillText("WCA ID: " + id, canvas.width / 2, 1070);
-            ctx.font = "600 65px Montserrat"; ctx.fillStyle = "#777"; ctx.fillText("has officially secured", canvas.width / 2, 1300);
-            ctx.font = "bold 180px 'Playfair Display'"; ctx.fillStyle = "#1a1a1a"; ctx.fillText(rank.toUpperCase(), canvas.width / 2, 1520);
-            ctx.font = "bold 85px Montserrat"; ctx.fillText(`in the ${event} event`, canvas.width / 2, 1680);
-            ctx.font = "700 110px Montserrat"; ctx.fillStyle = "#d4af37"; ctx.fillText(`RESULT: ${result}`, canvas.width / 2, 1920);
-
-            ctx.fillStyle = "#1a1a1a"; ctx.font = "bold 65px Montserrat"; ctx.fillText(comp.toUpperCase(), canvas.width / 2, 2220);
-
-            if (document.getElementById('showSign').checked) {
-                ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = 4;
-                ctx.beginPath(); ctx.moveTo(canvas.width - 850, 2220); ctx.lineTo(canvas.width - 250, 2220); ctx.stroke();
-                ctx.font = "bold 35px Montserrat"; ctx.fillText("OFFICIAL DELEGATE SIGNATURE", canvas.width - 550, 2280);
-            }
-        }
-
-        function updatePreview() {
-            pCtx.drawImage(canvas, 0, 0, preview.width, preview.height);
-        }
-
+        
         window.onload = () => {
-            render("Competitor Name", "2026ID01", "Competition Name", "3x3x3 Cube", "1st Place", "8.50 Average");
-            updatePreview();
+            render("Competitor Name", "2026ID01", "Competition Name", "3x3x3 Cube", "1st Place", "8.50 Average", "#D4AF37");
         };
+    
     </script>
 </body>
 </html>
